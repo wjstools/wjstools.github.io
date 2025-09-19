@@ -322,7 +322,7 @@
             renderInputValue();
             const value = getHexValueFromState();
             replaceColorInUrl(value);
-            emitCrossOriginColorChange(value);
+            emitColorChange(value);
         }
 
         function renderCanvasHandle() {
@@ -354,7 +354,7 @@
             return rgbToHex(...hslToRgb(state.hue, state.saturation, state.lightness));
         }
 
-        function emitCrossOriginColorChange(color) {
+        function emitColorChange(color) {
             let target = window.opener;
             if (!target) {
                 target = window.parent;
@@ -365,7 +365,7 @@
                     type: 'colorChange',
                     color: color,
                 }
-                target.postMessage(message, target.origin);
+                target.postMessage(message, "*");
             }
         }
 
