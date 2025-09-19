@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Color Picker Docs</title>
+    </head>
+    <body>
+        <h1>Color Picker Docs</h1>
+        <a href="../?color=ff6b6b">Back to Color Picker</a>
+        <div id="color-preview" style="display: inline-block;">color preview</div>
+        <script id="color-picker-script">
+            window.addEventListener('DOMContentLoaded', registerHandlers);
+
+            function registerHandlers() {
+                window.addEventListener('click', handleClick);
+                window.addEventListener('message', handleMessage);
+            }
+
+            function handleClick(evt) {
+                if (evt.target.tagName === 'A' && evt.target.href.includes('?color=')) {
+                    evt.preventDefault();
+                    window.open(evt.target.href, 'test', 'popup=true,left=100,top=200,width=400,height=400,location=no,scrollbars=no');
+                }
+            }
+
+            function handleMessage(evt) {
+                if (evt.data.type === 'colorChange') {
+                    console.log('color changed', evt.data.color);
+                    const colorPreviewElement = document.getElementById('color-preview');
+                    colorPreviewElement.style.background = evt.data.color;
+                }
+            }
+        </script>
+        <pre id="color-picker-script-src"></pre>
+        <script>
+            window.addEventListener('DOMContentLoaded', main);
+
+            function main() {
+                const colorPickerScript = document.getElementById('color-picker-script');
+                const colorPickerScriptSrc = colorPickerScript.textContent;
+                const colorPickerScriptSrcElement = document.getElementById('color-picker-script-src');
+                colorPickerScriptSrcElement.textContent = colorPickerScriptSrc;
+            }
+        </script>
+    </body>
+</html>

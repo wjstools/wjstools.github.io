@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Picker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* outline: 1px dotted red; */
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+        }
+
+        html {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            gap: 1em;
+            padding: 1em;
+            max-width: 600px;
+            max-height: 600px;
+            margin: auto;
+
+            #picker {
+                flex: 1;
+                display: flex;
+                flex-direction: row;
+                gap: 1em;
+                min-height: 4em;
+
+                #slider, #pick-area {
+                    flex: 1;
+                    cursor: pointer;
+                    position: relative;
+                    canvas {
+                        position: absolute;
+                        border-radius: 0.5em;
+                    }
+                    #slider-handle, #pick-area-handle {
+                        position: absolute;
+                        width: 1em;
+                        height: 1em;
+                        background-color: red;
+                        border: 2px solid white;
+                        cursor: pointer;
+                        transform: translate(-50%, -50%);
+                        border-radius: 50%;
+                        box-shadow: 0 3px 6px 0 rgba(0, 0, 0, 0.25), 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+                    }
+                }
+                #slider {
+                    flex: 0.25;
+                    min-width: 1em;
+                    max-width: 2em;
+                }
+            }
+
+            #color-input-div {
+                grid-area: color-input-div;
+                width: 100%;
+                display: flex;
+                gap: 1em;
+
+                #color-input {
+                    flex: 1;
+                    height: 2em;
+                    min-width: 2em;
+                }
+                #submit-button {
+                    flex: 0.25;
+                }
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id=picker>
+        <div id=pick-area>
+            <canvas id=pick-area-canvas width=64 height=64></canvas>
+            <div id=pick-area-handle tabindex=0></div>
+        </div>
+        <div id=slider>
+            <canvas id=slider-canvas width=1 height=128></canvas>
+            <div id=slider-handle tabindex=0></div>
+        </div>
+    </div>
+    <div id="color-input-div">
+        <input id="color-input" type="text">
+        <button id="submit-button">Submit</button>
+    </div>
+    <script>
+        const state = {
+            hue: 0,
+            saturation: 0,
+            lightness: 0
+        };
+
+        window.addEventListener('DOMContentLoaded', main);
+
+        function main() {
+            // get color from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const color = urlParams.get('color');
+            if (color) {
+                const [r, g, b] = hexToRgb(color);
+                // convert to hsl
+                const [h, s, l] = rgbToHsl(r, g, b);
+                setHueSaturationLightness(h, s, l);
+            }
+            else {
+                setHueSaturationLightness(Math.random(), Math.random(), Math.random());
+            }
+            window.addEventListener('resize', handleResize);
+            handleResize();
+            installPointerCapture(document.getElementById('slider-handle'), handleSliderHandle);
+            installPointerCapture(document.getElementById('pick-area-handle'), handlePickAreaHandle);
+            installPointerCapture(document.getElementById('slider'), handleSliderHandle);
+            installPointerCapture(document.getElementById('pick-area'), handlePickAreaHandle);
+            document.getElementById('color-input').addEventListener('input', handleColorInput);
+            document.getElementById('submit-button').addEventListener('click', handleSubmitButton);
+        }
+
+        function renderCanvas(hue) {
+            const canvas = document.getElementById('pick-area-canvas');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
+            const data = imageData.data;
+            for (let i = 0; i < canvas.width; i++) {
+                for (let j = 0; j < canvas.height; j++) {
+                    const index = (j * canvas.width + i) * 4;
+                    fillImageDataSlice(data, index, i/(canvas.width-1), j/(canvas.height-1), hue);
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function renderSliderCanvas(saturation) {
+            const canvas = document.getElementById('slider-canvas');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
+            const data = imageData.data;
+            for (let i = 0; i < canvas.width; i++) {
+                for (let j = 0; j < canvas.height; j++) {
+                    const index = (j * canvas.width + i) * 4;
+                    fillImageDataSlice(data, index, saturation, 0.5, j/(canvas.height-1));
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function handleResize() {
+            const canvas = document.getElementById('pick-area-canvas');
+            const pickArea = canvas.parentElement;
+            canvas.style.width = pickArea.clientWidth + "px";
+            canvas.style.height = pickArea.clientHeight + "px";
+            const sliderCanvas = document.getElementById('slider-canvas');
+            const slider = sliderCanvas.parentElement;
+            sliderCanvas.style.width = slider.clientWidth + "px";
+            sliderCanvas.style.height = slider.clientHeight + "px";
+        }
+
+        function fillImageDataSlice(data, index, x, y, z) {
+            const green = Math.cos(x);
+            const blue = Math.sin(x);
+            const [r, g, b] = hslToRgb(z, x, y);
+
+            data[index] = Math.round(r*255);      // R
+            data[index + 1] = Math.round(g*255);  // G
+            data[index + 2] = Math.round(b*255);  // B
+            data[index + 3] = 255;// A
+        }
+
+        // Standard RGB <-> HSL conversion (all values normalized 0..1)
+
+        function rgbToHsl(r, g, b) {
+            // r, g, b in [0,1]
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+
+            if (max === min) {
+                h = s = 0; // achromatic
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r:
+                        h = (g - b) / d + (g < b ? 6 : 0);
+                        break;
+                    case g:
+                        h = (b - r) / d + 2;
+                        break;
+                    case b:
+                        h = (r - g) / d + 4;
+                        break;
+                }
+                h /= 6;
+            }
+            return [h, s, l]; // all in [0,1]
+        }
+
+        function hslToRgb(h, s, l) {
+            // h, s, l in [0,1]
+            let r, g, b;
+
+            if (s === 0) {
+                r = g = b = l; // achromatic
+            } else {
+                function hue2rgb(p, q, t) {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                }
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            return [r, g, b]; // all in [0,1]
+        }
+
+        // "#abcdef" -> [r, g, b] in [0,1]
+        function hexToRgb(hex) {
+            hex = hex.replace(/^#/, '');
+            if (hex.length === 3) {
+                hex = hex.split('').map(c => c + c).join('');
+            }
+            if (hex.length !== 6) {
+                throw new Error('Invalid hex color');
+            }
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            return [r / 255, g / 255, b / 255];
+        }
+
+        // [r, g, b] in [0,1] -> "#abcdef"
+        function rgbToHex(r, g, b) {
+            r = Math.round(r * 255);
+            g = Math.round(g * 255);
+            b = Math.round(b * 255);
+            return (
+                "#" +
+                r.toString(16).padStart(2, "0") +
+                g.toString(16).padStart(2, "0") +
+                b.toString(16).padStart(2, "0")
+            );
+        }
+
+        function installPointerCapture(element, callback) {
+            const handleMove = (evt) => {
+                evt.preventDefault();
+                evt.target.setPointerCapture(evt.pointerId);
+                callback(evt);
+            };
+            element.addEventListener('pointerdown', (evt) => {
+                evt.preventDefault();
+                evt.target.setPointerCapture(evt.pointerId);
+                element.addEventListener('pointermove', handleMove);
+                callback(evt);
+            });
+            element.addEventListener('pointerup', (evt) => {
+                evt.preventDefault();
+                evt.target.releasePointerCapture(evt.pointerId);
+                element.removeEventListener('pointermove', handleMove);
+                callback(evt);
+            });
+        }
+
+        function handleSliderHandle(evt) {
+            const [_, y] = handleArea(evt, 'slider');
+            setHue(y);
+        }
+
+        function handlePickAreaHandle(evt) {
+            const [x, y] = handleArea(evt, 'pick-area');
+            setSaturationLightness(x, y);
+        }
+
+        function handleArea(evt, selector, callback) {
+            const pickArea = document.getElementById(selector);
+            const bounds = pickArea.getBoundingClientRect();
+            const x = (evt.clientX - bounds.left) / bounds.width;
+            const y = (evt.clientY - bounds.top) / bounds.height;
+            return [x,y];
+        }
+
+        function setHue(h) {
+            setHueSaturationLightness(h, state.saturation, state.lightness);
+        }
+
+        function setSaturationLightness(s, l) {
+            setHueSaturationLightness(state.hue, s, l);
+        }
+
+        function setHueSaturationLightness(h, s, l) {
+            state.hue = Math.max(0, Math.min(1, h));
+            state.saturation = Math.max(0, Math.min(1, s));
+            state.lightness = Math.max(0, Math.min(1, l));
+            renderCanvas(state.hue);
+            renderSliderCanvas(state.saturation);
+            renderCanvasHandle();
+            renderSliderHandle();
+            renderInputValue();
+            const value = getHexValueFromState();
+            replaceColorInUrl(value);
+            emitCrossOriginColorChange(value);
+        }
+
+        function renderCanvasHandle() {
+            const handle = document.getElementById('pick-area-handle');
+            updateHandlePosition(handle,state.saturation, state.lightness);
+            handle.style.backgroundColor = getHexValueFromState();
+        }
+
+        function renderSliderHandle() {
+            const handle = document.getElementById('slider-handle');
+            updateHandlePosition(handle, 0.5, state.hue);
+            handle.style.backgroundColor = getHexValueFromState();
+        }
+
+        function updateHandlePosition(handle, x, y) {
+            handle.style.left = `${x * 100}%`;
+            handle.style.top = `${y * 100}%`;
+        }
+
+        function renderInputValue() {
+            const input = document.getElementById('color-input');
+            if (window.document.activeElement === input) {
+                return;
+            }
+            input.value = getHexValueFromState();
+        }
+
+        function getHexValueFromState() {
+            return rgbToHex(...hslToRgb(state.hue, state.saturation, state.lightness));
+        }
+
+        function emitCrossOriginColorChange(color) {
+            let target = window.opener;
+            if (!target) {
+                target = window.parent;
+            }
+            if (target && target !== window) {
+                console.log('emitting color change to target', target);
+                const message = {
+                    type: 'colorChange',
+                    color: color,
+                }
+                target.postMessage(message, target.origin);
+            }
+        }
+
+        function replaceColorInUrl(color) {
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('color', color.replace('#', ''));
+            window.history.replaceState({}, '', `?${urlParams.toString()}`);
+        }
+
+        function handleColorInput(evt) {
+            const color = evt.target.value;
+            const [r, g, b] = hexToRgb(color);
+            const [h, s, l] = rgbToHsl(r, g, b);
+            setHueSaturationLightness(h, s, l);
+        }
+
+        function handleSubmitButton(evt) {
+            window.close();
+        }
+
+    </script>
+</body>
+
+</html>
